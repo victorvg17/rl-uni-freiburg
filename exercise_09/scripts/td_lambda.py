@@ -39,11 +39,7 @@ class Network(nn.Module):
     torch.nn.init.constant_(self.fc3.weight, 0)
     torch.nn.init.constant_(self.fc3.bias, 0)
 
-def overwrite_params(weights_old, weights_updated):
-    for weight_old, weight_updated in zip(weights_old, weights_updated):
-        weight_old.data.copy_(weight_updated)
-
-
+# def overwrite_params()
 
 class TDLambda:
   def __init__(self, state_dim, gamma, trace_decay, alpha):
@@ -57,7 +53,18 @@ class TDLambda:
     self.trace_decay = trace_decay
     self.alpha = alpha
 
+    # define a loss function and optimiser
+    self._loss_function = nn.MSELoss()
+    # optimiser only for value function v
+    self._optimizer = optim.SGD(self.v.parameters(), lr=0.001, momentum=0.9)
+
     self.z.init_zero()
+
+  def _calc_grad(target, prediction):
+      self._optimizer.zero_grad()
+      self._loss(target, prediction)
+      self._loss.backward()
+      self._optimizer.step()
 
   def train(self, episodes, time_steps):
     for e in range(episodes):
@@ -67,45 +74,41 @@ class TDLambda:
 
       # Implement this
       # Initialize z each episode
-      """
-          z: ET exist for each state and determines how much of respective component of
-          weight vector (dimension = s*1) should be used for updating weight for next
-          iteration
-      """
-      self.z.init_zero()
 
       for t in range(time_steps):
         a = get_action(s)
         ns, r, d = env.step(a)
 
         # Implement this
-        # self.v(torch.tensor(s)).mean().backward()
-        # calculate TD error
-        value_fun_current = self.v.forward(tt(np.array(s)))
-
-        z_params = self.z.parameters()
-        v_params = self.v.parameters()
-        # model(torch.randn(1, 3, 224, 224)).mean().backward()
-
-        for z_param, v_param in zip(z_params, v_params):
-            z_param_new_val = self.trace_decay*self.gamma*z_param.data + v_param.grad
-            z_param.data.copy_(z_param_new_val)
-        # calculate TD error
-
-        value_fun_next = self.v(ns)
-        td_errors = r + self.gamma*value_fun_next - value_fun_current
 
         """
         # You can get the value of a parameter param by param.data and the gradient of param by param.grad.data.
         # You can overwrite the entry of a parameter param by param.data.copy_(new_value)
         """
-        v_params = self.v.parameters()
-        for v_param, td_error, z_param in zip(v_params, td_errors, z_params):
-            v_param_new_val = v_param.data + self.alpha*td_error*z_param
-            v_param.data.copy_(v_param_new_val)
+        # prediction from Module out which takes ns as input.
+        r = np.array([r])
+        # state_value_target = tt(np.array(r))+ self.gamma*self.v(tt(np.array(ns)))
+        state_value_target = torch.from_numpy(r).float() + self.gamma*self.v( torch.from_numpy(np.array([ns])).float() )
+        state_value_pred = self.v(torch.from_numpy(np.array([ns])).float())
+        # call function for calculating gradients based on the loss between target and prediction
+        # self._calc_grad(target=state_value_target, prediction=state_value_pred)
+        self._optimizer.zero_grad()
+        loss = self._loss_function(state_value_target, state_value_pred)
+        loss.backward()
+        self._optimizer.step()
 
-        weights_old = self.v.parameters()
-        overwrite_params(weights_old = weights_old, weights_updated = v_params)
+        # update et param values
+        for z_param, v_param in zip(self.z.parameters(), self.v.parameters()):
+            new_value_z = self.gamma*self.trace_decay*z_param.data + v_param.grad.data
+            z_param.data.copy_(new_value_z)
+
+        # calculate td_errors
+        td_error = state_value_target - self.v(tt(np.array([s])))
+
+        # update params w of v
+        for z_param, v_param in zip(self.z.parameters(), self.v.parameters()):
+            new_value_v = v_param.data + self.alpha*td_error*z_param.data
+            v_param.data.copy_(new_value_v)
 
         if d:
           break
@@ -118,7 +121,8 @@ if __name__ == "__main__":
   env = GridworldEnv()
   tdlambda = TDLambda(1, gamma=0.99, trace_decay=0.5, alpha=0.001)
 
-  episodes = 1000000
+  # episodes = 1000000
+  episodes = 1000
   time_steps = 50
 
   w = tdlambda.train(episodes, time_steps)
