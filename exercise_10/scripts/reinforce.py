@@ -28,13 +28,13 @@ class StateValueFunction(nn.Module):
     self.fc2 = nn.Linear(hidden_dim, hidden_dim)
     self.fc3 = nn.Linear(hidden_dim, 1)
     self._non_linearity = non_linearity
-    raise NotImplementedError("StateValueFunction.__init__ missing")
+    # raise NotImplementedError("StateValueFunction.__init__ missing")
 
   def forward(self, x):
     # Implement this!
     x = self._non_linearity(self.fc1(x))
     x = self._non_linearity(self.fc2(x))
-    raise NotImplementedError("StateValueFunction.forward missing")
+    # raise NotImplementedError("StateValueFunction.forward missing")
     return self.fc3(x)
 
 
@@ -65,6 +65,8 @@ class REINFORCE:
     # self._V.cuda()
     # self._pi.cuda()
 
+    #adding alpha from last exercise.
+    self._alpha = 0.001
     self._gamma = gamma
     self._loss_function = nn.MSELoss()
     self._V_optimizer = optim.Adam(self._V.parameters(), lr=0.0001)
@@ -72,12 +74,14 @@ class REINFORCE:
     self._action_dim = action_dim
     self._loss_function = nn.MSELoss()
 
-  def get_action(self, s):
+  def get_action(self, state):
     # Implement this!
     # get action using self._pi
-    action_prob = self._pi(tt(np.array([s])))
-    action_select = np.argmax(tt(action_prob))
-    return action_select
+    state = tt(np.array([state]))
+    action_prob = self._pi(state)
+    highest_prob_action = np.random.choice(np.arange(0, self._action_dim), p=np.squeeze(action_prob.detach().numpy()))
+    log_prob = torch.log(action_prob.squeeze(0)[highest_prob_action])
+    return highest_prob_action, log_prob
     # raise NotImplementedError("REINFORCE.get_action missing")
 
   def _calc_value_function(self, episodes_data, curr_index):
@@ -85,9 +89,29 @@ class REINFORCE:
       G = 0
       T = len(episodes_data)
       assert T > curr_index, "curr_index should always be within maximum lenght of episodes"
-      for k in range(start=curr_index+1, stop=T):
-          G = G + episodes_data[k][2]
+      for k in range(curr_index+1, T):
+          pow = k-(curr_index + 1)
+          r_k = episodes_data[k][2]
+          G = G + (self._gamma**pow)*r_k
       return G
+
+  def _calc_policy_loss_gradient(self, input):
+      input = torch.tensor([input], requires_grad=True)
+      # input = Variable(torch.tensor([input]), requires_grad=True)
+      self._pi_optimizer.zero_grad()
+      input.backward()
+      self._pi_optimizer.step()
+
+  def _adjust_policy_parameters(self, itr):
+    """
+    # You can get the value of a parameter param by param.data and the gradient of param by param.grad.data.
+    # You can overwrite the entry of a parameter param by param.data.copy_(new_value)
+    """
+    policy_params = self._pi.parameters()
+    for param in policy_params:
+        param_target = param.data + self._alpha*(self._gamma**itr)*param.grad.data
+        param.data.copy_(param_target)
+
 
   def train(self, episodes, time_steps):
     stats = EpisodeStats(episode_lengths=np.zeros(episodes), episode_rewards=np.zeros(episodes))
@@ -98,13 +122,13 @@ class REINFORCE:
       episode = []
       s = env.reset()
       for t in range(time_steps):
-        a = self.get_action(s)
-        ns, r, d, _ = env.step(a)
+        highest_prob_action, log_prob = self.get_action(s)
+        ns, r, d, _ = env.step(highest_prob_action)
 
         stats.episode_rewards[i_episode-1] += r
         stats.episode_lengths[i_episode-1] = t
 
-        episode.append((s, a, r))
+        episode.append((s, highest_prob_action, r))
 
         if d:
           break
@@ -116,8 +140,12 @@ class REINFORCE:
 
         # calculate total value function
         G = self._calc_value_function(episodes_data=episode, curr_index=t)
+        # call the function to calculate loss and gradient.
+        policy_grad_ip = G*log_prob
+        self._calc_policy_loss_gradient(input=policy_grad_ip)
 
-
+        # update the parameters of policy function
+        self._adjust_policy_parameters(itr=t)
 
         # Implement this!
         raise NotImplementedError("REINFORCE.train missing")
