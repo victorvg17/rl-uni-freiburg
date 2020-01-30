@@ -16,7 +16,7 @@ from mountain_car import MountainCarEnv
 
 EpisodeStats = namedtuple("Stats",["episode_lengths", "episode_rewards"])
 
-def tt(ndarray):
+def tt(ndarray, requires_grad=False):
   # return Variable(torch.from_numpy(ndarray).float().cuda(), requires_grad=False)
   return Variable(torch.from_numpy(ndarray).float(), requires_grad=False)
 
@@ -52,7 +52,7 @@ class Policy(nn.Module):
   def forward(self, x):
     # Implement this!
     x = self._non_linearity(self.fc1(x))
-    x = self._non_linearity(self.fc2(x))
+    x = self.fc2(x)
     # raise NotImplementedError("Policy.forward missing")
     return self.fc3(x)
 
@@ -77,9 +77,9 @@ class REINFORCE:
   def get_action(self, state):
     # Implement this!
     # get action using self._pi
-    state = tt(np.array([state]))
-    action_prob = self._pi(state)
-    highest_prob_action = np.random.choice(np.arange(0, self._action_dim), p=np.squeeze(action_prob.detach().numpy()))
+    # state = tt(np.array(state))
+    action_prob = self._pi(tt(state))
+    highest_prob_action = np.random.choice(self._action_dim, p=np.squeeze(action_prob.detach().numpy()))
     log_prob = torch.log(action_prob.squeeze(0)[highest_prob_action])
     return highest_prob_action, log_prob
     # raise NotImplementedError("REINFORCE.get_action missing")
@@ -88,19 +88,12 @@ class REINFORCE:
       # total length of episodes
       G = 0
       T = len(episodes_data)
-      assert T > curr_index, "curr_index should always be within maximum lenght of episodes"
+
       for k in range(curr_index+1, T):
           pow = k-(curr_index + 1)
           r_k = episodes_data[k][2]
           G = G + (self._gamma**pow)*r_k
       return G
-
-  def _calc_policy_loss_gradient(self, input):
-      input = torch.tensor([input], requires_grad=True)
-      # input = Variable(torch.tensor([input]), requires_grad=True)
-      self._pi_optimizer.zero_grad()
-      input.backward()
-      self._pi_optimizer.step()
 
   def _adjust_policy_parameters(self, itr):
     """
@@ -108,7 +101,10 @@ class REINFORCE:
     # You can overwrite the entry of a parameter param by param.data.copy_(new_value)
     """
     policy_params = self._pi.parameters()
+
     for param in policy_params:
+        # print(f'policy_param: {param.data.shape}')
+        # print(f'policy_param: {param.grad.data}')
         param_target = param.data + self._alpha*(self._gamma**itr)*param.grad.data
         param.data.copy_(param_target)
 
@@ -122,33 +118,47 @@ class REINFORCE:
       episode = []
       s = env.reset()
       for t in range(time_steps):
+        # use Policy NN to get the next actions.
         highest_prob_action, log_prob = self.get_action(s)
         ns, r, d, _ = env.step(highest_prob_action)
 
         stats.episode_rewards[i_episode-1] += r
         stats.episode_lengths[i_episode-1] = t
 
-        episode.append((s, highest_prob_action, r))
+        episode.append((s, highest_prob_action, r, log_prob))
 
         if d:
           break
         s = ns
 
-      for t in range(len(episode)):
+      # collect all rewards at one place
+      episode = np.array(episode)
+      rewards = episode[:, 2]
+      for t_epi in range(len(episode)):
         # Find the first occurance of the state in the episode
-        s, a, r = episode[t]
+        s, a, r, log_prob = episode[t_epi]
 
         # calculate total value function
-        G = self._calc_value_function(episodes_data=episode, curr_index=t)
+        # at each time=t, G is some of rewards from (t+1) to T
+        Gt = 0
+        pw = 0
+        for r in rewards[t:]:
+            Gt = Gt + self._gamma**pw * r
+            pw = pw + 1
+
         # call the function to calculate loss and gradient.
-        policy_grad_ip = G*log_prob
-        self._calc_policy_loss_gradient(input=policy_grad_ip)
+
+        policy_grad_ip = Gt*log_prob
+        # policy_grad_ip.se
+        # policy_grad_ip = tt(policy_grad_ip, requires_grad=True)
+        # print(f'policy_grad_ip: {policy_grad_ip.shape, policy_grad_ip}')
+        self._pi_optimizer.zero_grad()
+        policy_grad_ip.backward()
 
         # update the parameters of policy function
-        self._adjust_policy_parameters(itr=t)
+        self._adjust_policy_parameters(itr=t_epi)
 
-        # Implement this!
-        raise NotImplementedError("REINFORCE.train missing")
+        # raise NotImplementedError("REINFORCE.train missing")
 
       print("\r{} Steps in Episode {}/{}. Reward {}".format(len(episode), i_episode, episodes, sum([e[2] for i,e in enumerate(episode)])))
     return stats
@@ -185,7 +195,7 @@ if __name__ == "__main__":
   action_dim = env.action_space.n
   reinforce = REINFORCE(state_dim, action_dim, gamma=0.99)
 
-  episodes = 3000
+  episodes = 5
   time_steps = 500
 
   stats = reinforce.train(episodes, time_steps)
