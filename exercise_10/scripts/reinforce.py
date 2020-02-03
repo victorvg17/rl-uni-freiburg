@@ -17,45 +17,34 @@ from mountain_car import MountainCarEnv
 EpisodeStats = namedtuple("Stats",["episode_lengths", "episode_rewards"])
 
 def tt(ndarray):
-  # return Variable(torch.from_numpy(ndarray).float().cuda(), requires_grad=False)
   return Variable(torch.from_numpy(ndarray).float(), requires_grad=False)
 
 class StateValueFunction(nn.Module):
-  def __init__(self, state_dim, non_linearity=F.relu, hidden_dim=20):
+  def __init__(self, state_dim, non_linearity=F.relu, hidden_dim=50):
     super(StateValueFunction, self).__init__()
-    # Implement this!
     self.fc1 = nn.Linear(state_dim, hidden_dim)
     self.fc2 = nn.Linear(hidden_dim, hidden_dim)
     self.fc3 = nn.Linear(hidden_dim, 1)
     self._non_linearity = non_linearity
-    raise NotImplementedError("StateValueFunction.__init__ missing")
 
   def forward(self, x):
-    # Implement this!
     x = self._non_linearity(self.fc1(x))
     x = self._non_linearity(self.fc2(x))
-    raise NotImplementedError("StateValueFunction.forward missing")
     return self.fc3(x)
-
 
 class Policy(nn.Module):
-  def __init__(self, state_dim, action_dim, non_linearity=F.relu, hidden_dim=20):
+  def __init__(self, state_dim, action_dim, non_linearity=F.relu, hidden_dim=50):
     super(Policy, self).__init__()
-    # Implement this!
-    self.fc1 = nn.Linear(in_features=state_dim, out_features=hidden_dim)
-    self.fc2 = nn.Linear(in_features=hidden_dim, out_features=action_dim)
-    # out_features for the last linear layer will be number of possible actions
-    self.fc3 = nn.Softmax()
+    self.fc1 = nn.Linear(state_dim, hidden_dim)
+    self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+    self.fc3 = nn.Linear(hidden_dim, action_dim)
+    self.m = nn.Softmax(dim=1)
     self._non_linearity = non_linearity
-    # raise NotImplementedError("Policy.__init__ missing")
 
   def forward(self, x):
-    # Implement this!
     x = self._non_linearity(self.fc1(x))
     x = self._non_linearity(self.fc2(x))
-    # raise NotImplementedError("Policy.forward missing")
-    return self.fc3(x)
-
+    return self.m(self.fc3(x))
 
 class REINFORCE:
   def __init__(self, state_dim, action_dim, gamma):
@@ -72,22 +61,9 @@ class REINFORCE:
     self._action_dim = action_dim
     self._loss_function = nn.MSELoss()
 
-  def get_action(self, s):
-    # Implement this!
-    # get action using self._pi
-    action_prob = self._pi(tt(np.array([s])))
-    action_select = np.argmax(tt(action_prob))
-    return action_select
-    # raise NotImplementedError("REINFORCE.get_action missing")
-
-  def _calc_value_function(self, episodes_data, curr_index):
-      # total length of episodes
-      G = 0
-      T = len(episodes_data)
-      assert T > curr_index, "curr_index should always be within maximum lenght of episodes"
-      for k in range(start=curr_index+1, stop=T):
-          G = G + episodes_data[k][2]
-      return G
+  def get_action(self, x):
+    u = np.random.choice(np.arange(self._action_dim), p=self._pi(tt(np.array([x]))).cpu().detach().numpy()[0])
+    return u
 
   def train(self, episodes, time_steps):
     stats = EpisodeStats(episode_lengths=np.zeros(episodes), episode_rewards=np.zeros(episodes))
@@ -113,14 +89,24 @@ class REINFORCE:
       for t in range(len(episode)):
         # Find the first occurance of the state in the episode
         s, a, r = episode[t]
+        # Sum up all rewards since the first occurance
+        G = sum([e[2]*(self._gamma**i) for i,e in enumerate(episode[t:])])
+        # Calculate average return for this state over all sampled episodes
 
-        # calculate total value function
-        G = self._calc_value_function(episodes_data=episode, curr_index=t)
+        loss = self._loss_function(self._V(tt(np.array([s]))), tt(np.array([G])))
+        self._V_optimizer.zero_grad()
+        loss.backward()
+        self._V_optimizer.step()
 
-
-
-        # Implement this!
-        raise NotImplementedError("REINFORCE.train missing")
+        action_per_policy = self._pi(tt(np.array([s])))
+        log_action = torch.log(action_per_policy)
+        td_error = G - self._V(tt(np.array([s])))
+        # policy_objective = -(torch.log(self._pi(tt(np.array([s]))))[0, tt(np.array([a])).long()] * (G - self._V(tt(np.array([s]))))).mean()
+        policy_objective = -(log_action[0, tt(np.array([a])).long()] * (td_error)).mean()
+        # policy_objective = -
+        self._pi_optimizer.zero_grad()
+        policy_objective.backward()
+        self._pi_optimizer.step()
 
       print("\r{} Steps in Episode {}/{}. Reward {}".format(len(episode), i_episode, episodes, sum([e[2] for i,e in enumerate(episode)])))
     return stats
