@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import sys 
+import sys
 
 """
 Implement the different exploration strategies.
@@ -15,19 +15,27 @@ of arms.
 """
 
 def epsilon_greedy(mab, epsilon):
-  raise NotImplementedError()
+	rand = np.random.rand()
+	if (rand < epsilon):
+		return random(mab)
+	else:
+		return np.argmax(mab.bandit_q_values)
 
 def decaying_epsilon_greedy(mab, epsilon_init, schedule):
-  raise NotImplementedError()
+    epsilon = schedule(mab, epsilon_init)
+    return epsilon_greedy(mab, epsilon)
 
 def random(mab):
-  raise NotImplementedError()
+    return np.random.randint(mab.no_actions)
 
 def ucb(mab, c):
-  raise NotImplementedError()
+    q_actions = mab.bandit_q_values
+    return np.argmax(q_actions + c*np.sqrt(mab.step_counter/mab.bandit_counters))
 
 def softmax(mab, tau):
-  raise NotImplementedError()
+  q_actions = mab.bandit_q_values
+  action_soft = np.argmax(np.exp(q_actions/tau)/np.sum(np.exp(q_actions/tau)))
+  return action_soft
 
 class Bandit:
   def __init__(self, bias, q_value=0, counter=0):
@@ -35,7 +43,7 @@ class Bandit:
     self.q_value = q_value
     self.counter = counter
 
-  def pull(self):
+  def pull_reward(self):
     self.counter += 1
     reward = np.clip(self.bias + np.random.uniform(), 0, 1)
     self.q_value = self.q_value + 1/self.counter * (reward - self.q_value)
@@ -50,7 +58,7 @@ class MAB:
 
   def pull(self, action):
     self.step_counter += 1
-    return self.bandits[action].pull(), self.bandits[action].q_value
+    return self.bandits[action].pull_reward(), self.bandits[action].q_value
 
   def run(self, no_rounds, exploration_strategy, **strategy_parameters):
     regrets = []
@@ -89,9 +97,9 @@ def plot(regrets):
   plt.savefig('regret.pdf', bbox_inches='tight')
 
 if __name__ == '__main__':
-  no_rounds = 1000000
+  no_rounds = 1000
   def schedule(mab, epsilon_init):
-    raise NotImplementedError()
+    return (1 - mab.step_counter/no_rounds)*epsilon_init
 
   epsilon = 0.5
   epsilon_init = 0.6

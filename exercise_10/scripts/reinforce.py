@@ -61,9 +61,50 @@ class REINFORCE:
     self._action_dim = action_dim
     self._loss_function = nn.MSELoss()
 
-  def get_action(self, x):
-    u = np.random.choice(np.arange(self._action_dim), p=self._pi(tt(np.array([x]))).cpu().detach().numpy()[0])
-    return u
+  def get_action(self, state):
+    # Implement this!
+    # get action using self._pi
+    # state = tt(np.array(state))
+    action_prob = self._pi(tt(state))
+    highest_prob_action = np.random.choice(self._action_dim, p=np.squeeze(action_prob.detach().numpy()))
+    log_prob = torch.log(action_prob.squeeze(0)[highest_prob_action])
+    return highest_prob_action, log_prob
+    # raise NotImplementedError("REINFORCE.get_action missing")
+
+  def _calc_value_function(self, episodes_data, curr_index):
+      # total length of episodes
+      G = 0
+      T = len(episodes_data)
+
+      for k in range(curr_index+1, T):
+          pow = k-(curr_index + 1)
+          r_k = episodes_data[k][2]
+          G = G + (self._gamma**pow)*r_k
+      return G
+
+  def _adjust_policy_parameters(self, itr):
+    """
+    # You can get the value of a parameter param by param.data and the gradient of param by param.grad.data.
+    # You can overwrite the entry of a parameter param by param.data.copy_(new_value)
+    """
+    policy_params = self._pi.parameters()
+
+    for param in policy_params:
+        # print(f'policy_param: {param.data.shape}')
+        # print(f'policy_param: {param.grad.data}')
+        param_target = param.data + self._alpha*(self._gamma**itr)*param.grad.data
+        param.data.copy_(param_target)
+
+  def update_value_param(self, error):
+      self._V_optimizer.zero_grad()
+      error.backward(retain_graph=True)
+      self._V_optimizer.step()
+
+  def update_policy_param(self, error):
+      self._pi_optimizer.zero_grad()
+      error.backward()
+      self._pi_optimizer.step()
+
 
   def train(self, episodes, time_steps):
     stats = EpisodeStats(episode_lengths=np.zeros(episodes), episode_rewards=np.zeros(episodes))
