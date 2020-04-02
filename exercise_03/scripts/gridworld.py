@@ -42,7 +42,7 @@ class GridworldEnv:
     it = np.nditer(grid, flags=['multi_index'])
 
     while not it.finished:
-      s = it.iterindex  ## --x s = [0:15] x--
+      s = it.iterindex
       y, x = it.multi_index
 
       P[s] = {a : [] for a in range(self.nA)}

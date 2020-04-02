@@ -13,30 +13,36 @@ def value_iteration(env, theta=0.0001, discount_factor=1.0):
     Returns:
     A tuple (policy, V) of the optimal policy and the optimal value function.
     """
-    def one_step_look_ahead(state, V):
-        """
-        helper function
-        """
-        action_val = np.zeros((env.nA, 1))
-        for a in range(env.nA):
-            [(prob, next_s, reward, done)] = env.P[state][a]
-            action_val[a] = prob*(reward + discount_factor*V[next_s])
-        return action_val
 
     V = np.zeros(env.nS)
-    # TODO: Implement this!
-    while True:
-        delta = 0.0
-        for s in range(env.nS):
-            best_action_val = np.max(one_step_look_ahead(s, V))
-            delta = max(delta, np.abs(best_action_val - V[s]))
-            V[s] = best_action_val
-        if (delta < theta):
-            break
-    # create a deterministic policy
     policy = np.zeros([env.nS, env.nA])
+
+    while True:
+        # Stopping condition
+        delta = 0
+        # Update each state...
+        for s in range(env.nS):
+            # Get the best action and the value of the best action.
+            A = np.zeros(env.nA)
+            for a in range(env.nA):
+                for prob, ns, r, _ in env.P[s][a]:
+                    A[a] += prob * (r + discount_factor * V[ns])
+            best_action_value = np.max(A)
+            # Calculate delta across all states seen so far
+            delta = max(delta, np.abs(best_action_value - V[s]))
+            # Update the value function
+            V[s] = best_action_value
+        # Check if we can stop
+        if delta < theta:
+            break
+
     for s in range(env.nS):
-        best_action = one_step_look_ahead(state, V)
-        best_action_val = np.argmax(best_action)
-        policy[s, best_action_val] = 1.0
+      action_prob_s = np.zeros(env.nA)
+      for a in range(env.nA):
+          [(p, next_state, reward, done)] = env.P[s][a]
+          action_prob_s[a] = p*(reward + discount_factor*V[next_state])
+      greedy_a = np.argmax(action_prob_s)
+      # modify policy as per greedy policy
+      policy[s] = np.eye(env.nA)[greedy_a]
+
     return policy, V
