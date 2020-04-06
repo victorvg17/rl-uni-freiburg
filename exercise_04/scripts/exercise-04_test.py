@@ -213,13 +213,13 @@ class TestMCControl(unittest.TestCase):
 
 
     random_policy = create_random_policy(2)
-    Q, _ = mc_control_importance_sampling(env, num_episodes=500, behavior_policy=random_policy)
+    Q, _ = mc_control_importance_sampling(env, num_episodes=500000, behavior_policy=random_policy)
     self.assert_float_dict_almost_equal(expected_q_values, Q, decimal=2)
 
   def assert_float_dict_almost_equal(self, a, b, decimal=6):
     for key_pair in zip(sorted(a), sorted(b)):
-        self.assertTupleEqual(key_pair[0], key_pair[1])
-        np.testing.assert_array_almost_equal(a[key_pair[0]], b[key_pair[1]], decimal=decimal)
+      self.assertTupleEqual(key_pair[0], key_pair[1])
+      np.testing.assert_array_almost_equal(a[key_pair[0]], b[key_pair[1]], decimal=decimal)
 
 if __name__ == '__main__':
   unittest.main()
