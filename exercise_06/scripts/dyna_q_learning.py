@@ -1,7 +1,6 @@
 import sys
 import numpy as np
 from collections import defaultdict, namedtuple
-import itertools
 
 EpisodeStats = namedtuple("Stats",["episode_lengths", "episode_rewards"])
 
@@ -52,7 +51,10 @@ def dyna_q_learning(env, num_episodes, discount_factor=1.0, alpha=0.5, epsilon=0
 
   # The model.
   # A nested dictionary that maps state -> (action -> (next state, reward, terminal flag)).
+  # model is matrix with size: (nS*nA*3)
   M = defaultdict(lambda: np.zeros((env.nA, 3)))
+  # list for tracking visited states and actions
+  observed_sa = []
 
   # Keeps track of useful statistics
   stats = EpisodeStats(
@@ -69,44 +71,54 @@ def dyna_q_learning(env, num_episodes, discount_factor=1.0, alpha=0.5, epsilon=0
       sys.stdout.flush()
 
     # Implement this!
-    # variables for tracking taken actions and states
-    actions = []
-    states = []
+    # Reset the environment and pick the first action
+    state = env.reset()
 
-    for i in itertools.count():
-        state = env.reset()
-        action_probs = policy(state)
-        action = np.random.choice(np.arange(env.nA), p=action_probs)
-        ns, r, d = env.step(action)
+    # One step in the environment
+    # total_reward = 0.0
+    for t in itertools.count():
 
-        best_next_action = np.argmax(Q[ns])
+      # Take a step
+      action_probs = policy(state)
+      action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
+      next_state, reward, done, _ = env.step(action)
 
-        #update Stats
-        stats.episode_rewards[i_episode] += r
-        stats.episode_lengths[i_episode] = i
+      # Update statistics
+      stats.episode_rewards[i_episode] += reward
+      stats.episode_lengths[i_episode] = t
 
-        #TD update
-        td_target = r + discount_factor*Q[ns][best_next_action]
-        td_error = td_target - Q[state][action]
-        Q[state][action] += alpha*td_error
+      # TD Update
+      best_next_action = np.argmax(Q[next_state])
+      td_target = reward + discount_factor * Q[next_state][best_next_action]
+      td_delta = td_target - Q[state][action]
+      Q[state][action] += alpha * td_delta
+      # update the model
+      M[state][action] = [next_state, reward, done]
+      if (state, action) not in observed_sa:
+          observed_sa.append([state, action])
 
-        #update tabular Dyna: (next state, reward, terminal flag)
-        states.append(state)
-        actions.append(action)
-        M[state][action] = [ns, r, d]
-        #loop for planning steps times
-        for j in range(n):
-            state = np.random.choice(states, size=1)
-            action = np.random.choice(actions, size=1)
-            [ns, r, d] = M[state][action]
-            #TD update
-            td_target = r + discount_factor*Q[ns][best_next_action]
-            td_error = td_target - Q[state][action]
-            Q[state][action] += alpha*td_error
+      # planning with simulated experience from model
+      for i in range(5):
+          state_planned, action_planned = np.random.choice(observed_sa)
+          next_state, reward, done = model[state_planned][action_planned]
+          # TD Update
+          best_next_action = np.argmax(Q[next_state])
+          td_target = reward + discount_factor * Q[next_state][best_next_action]
+          td_delta = td_target - Q[state_planned][action_planned]
+          Q[state][action] += alpha * td_delta
 
-        state = ns
-        if done:
-            break
+      if done:
+        break
 
+      state = next_state
 
   return Q, stats
+
+  if __name__ == "__main__":
+      np.random.seed(0)
+      env = GridworldEnv()
+      Q, stats = dyna_q_learning(env, 10000)
+
+      print("")
+      for k,v in Q.items():
+        print("%s: %s" %(k,v.tolist()))
