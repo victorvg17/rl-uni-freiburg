@@ -104,7 +104,7 @@ class DQN:
 
     def update_weights(self, input, target):
         self._q_optimizer.zero_grad()
-        output = self._loss_function(input, target)
+        output = self._loss_function(input, target.detach())
         output.backward()
         self._q_optimizer.step()
 
@@ -132,16 +132,17 @@ class DQN:
                 batch_size = 64
                 batch_s, batch_a, batch_ns, batch_r, batch_d = self._replay_buffer.random_next_batch(batch_size)
                 target = batch_r + \
-                    self._gamma*(1-batch_d)*self._q_target(batch_ns)[:, torch.argmax(self._q_target(batch_ns), dim=1)]
-                input = self._q(batch_s)[:, torch.argmax(self._q(batch_s), dim=1)]
+                    self._gamma*(1-batch_d)*self._q_target(batch_ns)[torch.arange(batch_size), torch.argmax(self._q_target(batch_ns), dim=1)]
+                input = self._q(batch_s)[torch.arange(batch_size), torch.argmax(self._q(batch_s), dim=1)]
                 # print(f"input shape: {input.shape}, target shape: {target.shape}")
 
                 self.update_weights(input=input, target=target)
-                if d:
-                    break
                 soft_update(target=self._q_target,
                             source=self._q,
                             tau=1e-2)
+                if d:
+                    break
+
                 s = ns
             print(f"episode: {e}, reward: {stats.episode_rewards[e]} len: {stats.episode_lengths[e]}")
         return stats
